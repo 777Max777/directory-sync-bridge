@@ -1,0 +1,15 @@
+version: "3.9"
+services:
+  sync-server:
+    build: .
+    ports:
+      - "8000:8000"
+    volumes:
+      - type: bind
+        source: ${SOURCE_PATH:-C:/sync/source}
+        target: /mnt/source
+      - type: bind
+        source: ${DEST_PATH:-C:/sync/dest}
+        target: /mnt/dest
+    environment:
+      - MOUNT_ROOT=/mnt

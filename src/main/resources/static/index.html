@@ -1,0 +1,386 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Directory Sync Bridge</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: 'Segoe UI', Tahoma, sans-serif; background: #1a1a2e; color: #e0e0e0; min-height: 100vh; display: flex; justify-content: center; align-items: flex-start; padding: 20px; }
+.container { max-width: 700px; width: 100%; }
+h1 { text-align: center; color: #64ffda; margin-bottom: 20px; font-size: 1.5em; }
+.card { background: #16213e; border-radius: 12px; padding: 20px; margin-bottom: 16px; border: 1px solid #0f3460; }
+.card h2 { font-size: 1.1em; color: #64ffda; margin-bottom: 12px; }
+input[type="text"] { width: 100%; padding: 10px 14px; border: 1px solid #0f3460; border-radius: 8px; background: #0a0a1a; color: #e0e0e0; font-size: 14px; outline: none; }
+input[type="text"]:focus { border-color: #64ffda; }
+button { padding: 10px 20px; border: none; border-radius: 8px; cursor: pointer; font-size: 14px; font-weight: 600; transition: all 0.2s; }
+button:disabled { opacity: 0.4; cursor: not-allowed; }
+.btn-primary { background: #64ffda; color: #1a1a2e; }
+.btn-primary:hover:not(:disabled) { background: #4dd8b7; }
+.btn-danger { background: #ff6b6b; color: white; }
+.btn-danger:hover:not(:disabled) { background: #ee5a5a; }
+.btn-secondary { background: #0f3460; color: #e0e0e0; }
+.btn-secondary:hover:not(:disabled) { background: #1a4a7a; }
+.status-row { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid #0f3460; }
+.status-row:last-child { border-bottom: none; }
+.status-label { color: #a0a0b0; }
+.status-value { font-weight: 600; }
+.status-value.ready { color: #64ffda; }
+.status-value.waiting { color: #ffa726; }
+.progress-bar-container { background: #0a0a1a; border-radius: 8px; height: 24px; overflow: hidden; margin: 10px 0; }
+.progress-bar { height: 100%; background: linear-gradient(90deg, #64ffda, #4dd8b7); border-radius: 8px; transition: width 0.3s; display: flex; align-items: center; justify-content: center; font-size: 12px; color: #1a1a2e; font-weight: 700; min-width: 40px; }
+.progress-file { font-size: 12px; color: #a0a0b0; margin-top: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#log { background: #0a0a1a; border-radius: 8px; padding: 12px; max-height: 300px; overflow-y: auto; font-family: 'Consolas', 'Courier New', monospace; font-size: 13px; line-height: 1.6; }
+#log:empty::before { content: 'Лог синхронизации появится здесь...'; color: #555; }
+.log-info { color: #a0a0b0; }
+.log-ok { color: #66bb6a; }
+.log-warn { color: #ffa726; }
+.log-error { color: #ef5350; }
+.log-ignore { color: #42a5f5; }
+.stats-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 10px; }
+.stat-item { background: #0a0a1a; border-radius: 8px; padding: 10px; text-align: center; }
+.stat-value { font-size: 1.4em; font-weight: 700; color: #64ffda; }
+.stat-label { font-size: 11px; color: #a0a0b0; margin-top: 2px; }
+.actions { display: flex; gap: 10px; margin-top: 12px; }
+.actions button { flex: 1; }
+.hidden { display: none !important; }
+/* Modal */
+.modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); display: flex; justify-content: center; align-items: center; z-index: 100; }
+.modal { background: #16213e; border-radius: 12px; padding: 24px; width: 90%; max-width: 500px; max-height: 70vh; border: 1px solid #0f3460; }
+.modal h3 { color: #64ffda; margin-bottom: 16px; }
+.folder-tree { max-height: 40vh; overflow-y: auto; }
+.folder-item { padding: 8px 12px; cursor: pointer; border-radius: 6px; display: flex; align-items: center; gap: 8px; }
+.folder-item:hover { background: #0f3460; }
+.folder-item.selected { background: #0f3460; border: 1px solid #64ffda; }
+.folder-icon { font-size: 16px; }
+.folder-back { color: #ffa726; font-style: italic; }
+.modal-actions { display: flex; gap: 10px; margin-top: 16px; }
+.modal-actions button { flex: 1; }
+.checkbox-row { display: flex; align-items: center; gap: 8px; margin: 10px 0; }
+.checkbox-row input[type="checkbox"] { width: 18px; height: 18px; accent-color: #64ffda; }
+.sync-info { text-align: center; padding: 12px; color: #ffa726; font-weight: 600; }
+</style>
+</head>
+<body>
+<div class="container">
+    <h1>Directory Sync Bridge</h1>
+
+    <!-- Login Screen -->
+    <div id="loginScreen" class="card">
+        <h2>Подключение к комнате</h2>
+        <div style="margin-bottom:12px">
+            <input type="text" id="roomInput" placeholder="Введите Room ID..." />
+        </div>
+        <button class="btn-primary" onclick="joinRoom()" style="width:100%">Войти в комнату</button>
+    </div>
+
+    <!-- Main Screen -->
+    <div id="mainScreen" class="hidden">
+        <!-- Status Panel -->
+        <div class="card">
+            <h2>Статус подключения</h2>
+            <div class="status-row">
+                <span class="status-label">Ваша папка:</span>
+                <span id="myPathStatus" class="status-value waiting">не выбрана</span>
+            </div>
+            <div class="status-row">
+                <span class="status-label">Другая сторона:</span>
+                <span id="peerPathStatus" class="status-value waiting">ожидание...</span>
+            </div>
+            <div class="actions">
+                <button class="btn-secondary" onclick="openBrowseModal()">Обзор</button>
+                <button id="syncBtn" class="btn-primary" disabled onclick="startSync()">Синхронизировать</button>
+            </div>
+            <div class="checkbox-row">
+                <input type="checkbox" id="deleteExtra" />
+                <label for="deleteExtra">Удалять лишние файлы у получателя</label>
+            </div>
+        </div>
+
+        <!-- Sync Info -->
+        <div id="syncInfoCard" class="card hidden">
+            <div id="syncInfo" class="sync-info"></div>
+            <button id="cancelBtn" class="btn-danger hidden" onclick="cancelSync()" style="width:100%">Отменить</button>
+        </div>
+
+        <!-- Progress -->
+        <div id="progressCard" class="card hidden">
+            <h2>Прогресс</h2>
+            <div class="progress-bar-container">
+                <div id="progressBar" class="progress-bar" style="width:0%">0%</div>
+            </div>
+            <div id="progressFile" class="progress-file"></div>
+        </div>
+
+        <!-- Log -->
+        <div class="card">
+            <h2>Лог</h2>
+            <div id="log"></div>
+        </div>
+
+        <!-- Stats -->
+        <div id="statsCard" class="card hidden">
+            <h2>Результат</h2>
+            <div class="stats-grid">
+                <div class="stat-item"><div class="stat-value" id="statCopied">0</div><div class="stat-label">Скопировано</div></div>
+                <div class="stat-item"><div class="stat-value" id="statOverwritten">0</div><div class="stat-label">Перезаписано</div></div>
+                <div class="stat-item"><div class="stat-value" id="statSkipped">0</div><div class="stat-label">Пропущено</div></div>
+                <div class="stat-item"><div class="stat-value" id="statDeleted">0</div><div class="stat-label">Удалено</div></div>
+                <div class="stat-item"><div class="stat-value" id="statIgnored">0</div><div class="stat-label">Проигнорировано</div></div>
+                <div class="stat-item"><div class="stat-value" id="statErrors">0</div><div class="stat-label">Ошибок</div></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Browse Modal -->
+<div id="browseModal" class="modal-overlay hidden">
+    <div class="modal">
+        <h3>Выберите папку</h3>
+        <div id="currentBrowsePath" style="font-size:12px;color:#a0a0b0;margin-bottom:12px;word-break:break-all;"></div>
+        <div id="folderTree" class="folder-tree"></div>
+        <div class="modal-actions">
+            <button class="btn-secondary" onclick="closeBrowseModal()">Отмена</button>
+            <button class="btn-primary" id="selectFolderBtn" onclick="selectFolder()">Выбрать эту папку</button>
+        </div>
+    </div>
+</div>
+
+<script>
+let ws = null;
+let currentPath = '/mnt';
+let selectedPath = '/mnt';
+let isSyncing = false;
+let isInitiator = false;
+
+function joinRoom() {
+    const roomId = document.getElementById('roomInput').value.trim();
+    if (!roomId) return;
+
+    const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+    ws = new WebSocket(`${proto}//${location.host}/ws?room=${encodeURIComponent(roomId)}`);
+
+    ws.onopen = () => {
+        document.getElementById('loginScreen').classList.add('hidden');
+        document.getElementById('mainScreen').classList.remove('hidden');
+    };
+
+    ws.onmessage = (event) => {
+        const msg = JSON.parse(event.data);
+        handleMessage(msg);
+    };
+
+    ws.onclose = () => {
+        document.getElementById('loginScreen').classList.remove('hidden');
+        document.getElementById('mainScreen').classList.add('hidden');
+        isSyncing = false;
+        isInitiator = false;
+    };
+
+    ws.onerror = () => {
+        alert('Ошибка подключения к серверу');
+    };
+}
+
+function handleMessage(msg) {
+    switch (msg.type) {
+        case 'status':
+            updateStatus(msg);
+            break;
+        case 'sync_started':
+            onSyncStarted(msg);
+            break;
+        case 'sync_rejected':
+            addLog('warn', 'Синхронизация уже запущена другой стороной');
+            break;
+        case 'progress':
+            updateProgress(msg);
+            break;
+        case 'log':
+            addLog(msg.level, msg.message);
+            break;
+        case 'done':
+            onSyncDone(msg.stats);
+            break;
+    }
+}
+
+function updateStatus(msg) {
+    const myStatus = document.getElementById('myPathStatus');
+    const peerStatus = document.getElementById('peerPathStatus');
+    const syncBtn = document.getElementById('syncBtn');
+
+    if (msg.my_path) {
+        myStatus.textContent = msg.my_path + ' \u2705';
+        myStatus.className = 'status-value ready';
+    } else {
+        myStatus.textContent = '\u043D\u0435 \u0432\u044B\u0431\u0440\u0430\u043D\u0430';
+        myStatus.className = 'status-value waiting';
+    }
+
+    if (msg.peer_path) {
+        peerStatus.textContent = msg.peer_path + ' \u2705';
+        peerStatus.className = 'status-value ready';
+    } else if (msg.peer_ready === false && msg.peer_path === null) {
+        peerStatus.textContent = '\u043E\u0436\u0438\u0434\u0430\u043D\u0438\u0435... \u23F3';
+        peerStatus.className = 'status-value waiting';
+    }
+
+    syncBtn.disabled = !(msg.my_ready && msg.peer_ready) || isSyncing;
+
+    // If sync was active and we got status update, sync ended
+    if (isSyncing && !msg.peer_path) {
+        isSyncing = false;
+        isInitiator = false;
+        document.getElementById('syncInfoCard').classList.add('hidden');
+        document.getElementById('cancelBtn').classList.add('hidden');
+        syncBtn.disabled = true;
+    }
+}
+
+function onSyncStarted(msg) {
+    isSyncing = true;
+    isInitiator = msg.initiator === 'you';
+
+    const syncInfoCard = document.getElementById('syncInfoCard');
+    const syncInfo = document.getElementById('syncInfo');
+    const cancelBtn = document.getElementById('cancelBtn');
+    const syncBtn = document.getElementById('syncBtn');
+    const progressCard = document.getElementById('progressCard');
+    const statsCard = document.getElementById('statsCard');
+
+    syncInfoCard.classList.remove('hidden');
+    progressCard.classList.remove('hidden');
+    statsCard.classList.add('hidden');
+    syncBtn.disabled = true;
+
+    // Clear log
+    document.getElementById('log').innerHTML = '';
+
+    if (isInitiator) {
+        syncInfo.textContent = '\u0412\u044B \u2014 \u0438\u0441\u0442\u043E\u0447\u043D\u0438\u043A \u0441\u0438\u043D\u0445\u0440\u043E\u043D\u0438\u0437\u0430\u0446\u0438\u0438';
+        cancelBtn.classList.remove('hidden');
+    } else {
+        syncInfo.textContent = '\u0414\u0440\u0443\u0433\u0430\u044F \u0441\u0442\u043E\u0440\u043E\u043D\u0430 \u0437\u0430\u043F\u0443\u0441\u0442\u0438\u043B\u0430 \u0441\u0438\u043D\u0445\u0440\u043E\u043D\u0438\u0437\u0430\u0446\u0438\u044E. \u0412\u0430\u0448\u0430 \u043F\u0430\u043F\u043A\u0430 \u043E\u0431\u043D\u043E\u0432\u043B\u044F\u0435\u0442\u0441\u044F...';
+        cancelBtn.classList.add('hidden');
+    }
+}
+
+function updateProgress(msg) {
+    const pct = Math.round((msg.current / msg.total) * 100);
+    const bar = document.getElementById('progressBar');
+    bar.style.width = pct + '%';
+    bar.textContent = msg.current + ' / ' + msg.total;
+    document.getElementById('progressFile').textContent = msg.file;
+}
+
+function addLog(level, message) {
+    const log = document.getElementById('log');
+    const div = document.createElement('div');
+    div.className = 'log-' + level;
+    div.textContent = message;
+    log.appendChild(div);
+    log.scrollTop = log.scrollHeight;
+}
+
+function onSyncDone(stats) {
+    isSyncing = false;
+    isInitiator = false;
+
+    document.getElementById('syncInfoCard').classList.add('hidden');
+    document.getElementById('cancelBtn').classList.add('hidden');
+
+    // Show stats
+    const statsCard = document.getElementById('statsCard');
+    statsCard.classList.remove('hidden');
+    document.getElementById('statCopied').textContent = stats.copied;
+    document.getElementById('statOverwritten').textContent = stats.overwritten;
+    document.getElementById('statSkipped').textContent = stats.skipped;
+    document.getElementById('statDeleted').textContent = stats.deleted;
+    document.getElementById('statIgnored').textContent = stats.ignored;
+    document.getElementById('statErrors').textContent = stats.errors;
+
+    // Progress to 100%
+    const bar = document.getElementById('progressBar');
+    bar.style.width = '100%';
+    bar.textContent = '100%';
+}
+
+function startSync() {
+    if (!ws || isSyncing) return;
+    const deleteExtra = document.getElementById('deleteExtra').checked;
+    ws.send(JSON.stringify({ type: 'start_sync', delete_extra: deleteExtra }));
+}
+
+function cancelSync() {
+    if (!ws || !isSyncing || !isInitiator) return;
+    ws.send(JSON.stringify({ type: 'cancel' }));
+}
+
+// Browse modal
+async function openBrowseModal() {
+    currentPath = '/mnt';
+    document.getElementById('browseModal').classList.remove('hidden');
+    await loadFolder('/mnt');
+}
+
+function closeBrowseModal() {
+    document.getElementById('browseModal').classList.add('hidden');
+}
+
+async function loadFolder(path) {
+    currentPath = path;
+    document.getElementById('currentBrowsePath').textContent = path;
+
+    try {
+        const resp = await fetch('/browse?path=' + encodeURIComponent(path));
+        const data = await resp.json();
+        const tree = document.getElementById('folderTree');
+        tree.innerHTML = '';
+
+        // Back button (if not at root)
+        if (path !== '/mnt') {
+            const backItem = document.createElement('div');
+            backItem.className = 'folder-item folder-back';
+            backItem.innerHTML = '<span class="folder-icon">\u2B06</span> ..';
+            backItem.onclick = () => {
+                const parent = path.substring(0, path.lastIndexOf('/')) || '/mnt';
+                loadFolder(parent);
+            };
+            tree.appendChild(backItem);
+        }
+
+        data.dirs.forEach(dir => {
+            const item = document.createElement('div');
+            item.className = 'folder-item';
+            item.innerHTML = '<span class="folder-icon">\uD83D\uDCC1</span> ' + dir;
+            item.onclick = () => loadFolder(data.path + '/' + dir);
+            tree.appendChild(item);
+        });
+
+        if (data.dirs.length === 0 && path !== '/mnt') {
+            const empty = document.createElement('div');
+            empty.style.cssText = 'padding:12px;color:#555;text-align:center;';
+            empty.textContent = 'Нет подпапок';
+            tree.appendChild(empty);
+        }
+    } catch (e) {
+        console.error('Browse error:', e);
+    }
+}
+
+function selectFolder() {
+    selectedPath = currentPath;
+    closeBrowseModal();
+    if (ws) {
+        ws.send(JSON.stringify({ type: 'ready', path: selectedPath }));
+    }
+}
+
+// Enter key to join room
+document.getElementById('roomInput').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') joinRoom();
+});
+</script>
+</body>
+</html>
