@@ -9,10 +9,16 @@ import io.ktor.server.websocket.*
 import kotlinx.serialization.json.Json
 import java.time.Duration
 
-val mountRoot: String = System.getenv("MOUNT_ROOT") ?: "/mnt"
+/**
+ * Configurable browse root — limits which directories users can browse.
+ * Default "/" allows browsing the entire local filesystem.
+ * Set BROWSE_ROOT env var to restrict, e.g. BROWSE_ROOT=/home/user
+ */
+val browseRoot: String = System.getenv("BROWSE_ROOT") ?: "/"
 
 fun main() {
-    embeddedServer(Netty, port = 8000) {
+    val port = System.getenv("PORT")?.toIntOrNull() ?: 8000
+    embeddedServer(Netty, port = port) {
         install(WebSockets) {
             pingPeriod = Duration.ofSeconds(15)
             timeout = Duration.ofSeconds(30)

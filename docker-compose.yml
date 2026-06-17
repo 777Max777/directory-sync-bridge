@@ -6,10 +6,8 @@ services:
       - "8000:8000"
     volumes:
       - type: bind
-        source: ${SOURCE_PATH:-C:/sync/source}
-        target: /mnt/source
-      - type: bind
-        source: ${DEST_PATH:-C:/sync/dest}
-        target: /mnt/dest
+        source: ${DATA_PATH:-.}
+        target: /data
     environment:
-      - MOUNT_ROOT=/mnt
+      - BROWSE_ROOT=/data
+      - PORT=8000

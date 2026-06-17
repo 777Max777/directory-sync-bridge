@@ -9,4 +9,5 @@ FROM eclipse-temurin:17-jre-alpine
 WORKDIR /app
 COPY --from=builder /app/build/libs/*-all.jar app.jar
 EXPOSE 8000
+ENV BROWSE_ROOT=/data
 ENTRYPOINT ["java", "-jar", "app.jar"]

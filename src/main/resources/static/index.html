@@ -11,8 +11,14 @@ body { font-family: 'Segoe UI', Tahoma, sans-serif; background: #1a1a2e; color: 
 h1 { text-align: center; color: #64ffda; margin-bottom: 20px; font-size: 1.5em; }
 .card { background: #16213e; border-radius: 12px; padding: 20px; margin-bottom: 16px; border: 1px solid #0f3460; }
 .card h2 { font-size: 1.1em; color: #64ffda; margin-bottom: 12px; }
-input[type="text"] { width: 100%; padding: 10px 14px; border: 1px solid #0f3460; border-radius: 8px; background: #0a0a1a; color: #e0e0e0; font-size: 14px; outline: none; }
-input[type="text"]:focus { border-color: #64ffda; }
+input[type="text"], input[type="number"] {
+    width: 100%; padding: 10px 14px; border: 1px solid #0f3460; border-radius: 8px;
+    background: #0a0a1a; color: #e0e0e0; font-size: 14px; outline: none;
+}
+input:focus { border-color: #64ffda; }
+.input-row { display: flex; gap: 10px; margin-bottom: 10px; }
+.input-row input { flex: 1; }
+.input-row input.port { max-width: 80px; }
 button { padding: 10px 20px; border: none; border-radius: 8px; cursor: pointer; font-size: 14px; font-weight: 600; transition: all 0.2s; }
 button:disabled { opacity: 0.4; cursor: not-allowed; }
 .btn-primary { background: #64ffda; color: #1a1a2e; }
@@ -21,12 +27,15 @@ button:disabled { opacity: 0.4; cursor: not-allowed; }
 .btn-danger:hover:not(:disabled) { background: #ee5a5a; }
 .btn-secondary { background: #0f3460; color: #e0e0e0; }
 .btn-secondary:hover:not(:disabled) { background: #1a4a7a; }
+.btn-warn { background: #ffa726; color: #1a1a2e; }
+.btn-warn:hover:not(:disabled) { background: #ff9800; }
 .status-row { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid #0f3460; }
 .status-row:last-child { border-bottom: none; }
 .status-label { color: #a0a0b0; }
 .status-value { font-weight: 600; }
 .status-value.ready { color: #64ffda; }
 .status-value.waiting { color: #ffa726; }
+.status-value.disconnected { color: #ef5350; }
 .progress-bar-container { background: #0a0a1a; border-radius: 8px; height: 24px; overflow: hidden; margin: 10px 0; }
 .progress-bar { height: 100%; background: linear-gradient(90deg, #64ffda, #4dd8b7); border-radius: 8px; transition: width 0.3s; display: flex; align-items: center; justify-content: center; font-size: 12px; color: #1a1a2e; font-weight: 700; min-width: 40px; }
 .progress-file { font-size: 12px; color: #a0a0b0; margin-top: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -44,47 +53,73 @@ button:disabled { opacity: 0.4; cursor: not-allowed; }
 .actions { display: flex; gap: 10px; margin-top: 12px; }
 .actions button { flex: 1; }
 .hidden { display: none !important; }
-/* Modal */
 .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); display: flex; justify-content: center; align-items: center; z-index: 100; }
 .modal { background: #16213e; border-radius: 12px; padding: 24px; width: 90%; max-width: 500px; max-height: 70vh; border: 1px solid #0f3460; }
 .modal h3 { color: #64ffda; margin-bottom: 16px; }
 .folder-tree { max-height: 40vh; overflow-y: auto; }
 .folder-item { padding: 8px 12px; cursor: pointer; border-radius: 6px; display: flex; align-items: center; gap: 8px; }
 .folder-item:hover { background: #0f3460; }
-.folder-item.selected { background: #0f3460; border: 1px solid #64ffda; }
-.folder-icon { font-size: 16px; }
 .folder-back { color: #ffa726; font-style: italic; }
+.folder-icon { font-size: 16px; }
 .modal-actions { display: flex; gap: 10px; margin-top: 16px; }
 .modal-actions button { flex: 1; }
 .checkbox-row { display: flex; align-items: center; gap: 8px; margin: 10px 0; }
 .checkbox-row input[type="checkbox"] { width: 18px; height: 18px; accent-color: #64ffda; }
 .sync-info { text-align: center; padding: 12px; color: #ffa726; font-weight: 600; }
+.mode-tabs { display: flex; gap: 0; margin-bottom: 16px; }
+.mode-tab { flex: 1; padding: 10px; text-align: center; cursor: pointer; background: #0a0a1a; border: 1px solid #0f3460; font-weight: 600; color: #a0a0b0; transition: all 0.2s; }
+.mode-tab:first-child { border-radius: 8px 0 0 8px; }
+.mode-tab:last-child { border-radius: 0 8px 8px 0; }
+.mode-tab.active { background: #0f3460; color: #64ffda; border-color: #64ffda; }
+.info-box { background: #0a0a1a; border-radius: 8px; padding: 12px; margin: 12px 0; font-size: 13px; color: #a0a0b0; line-height: 1.5; }
+.info-box code { background: #16213e; padding: 2px 6px; border-radius: 4px; color: #64ffda; }
 </style>
 </head>
 <body>
 <div class="container">
     <h1>Directory Sync Bridge</h1>
 
-    <!-- Login Screen -->
-    <div id="loginScreen" class="card">
-        <h2>Подключение к комнате</h2>
-        <div style="margin-bottom:12px">
-            <input type="text" id="roomInput" placeholder="Введите Room ID..." />
+    <!-- Connection Screen -->
+    <div id="connectScreen" class="card">
+        <h2>Подключение</h2>
+        <div class="mode-tabs">
+            <div class="mode-tab active" onclick="setMode('host')">Хост (ожидать)</div>
+            <div class="mode-tab" onclick="setMode('join')">Подключиться</div>
         </div>
-        <button class="btn-primary" onclick="joinRoom()" style="width:100%">Войти в комнату</button>
+
+        <div id="hostMode">
+            <div class="info-box">
+                Этот экземпляр будет ожидать подключения второй стороны.<br>
+                Другая сторона должна указать ваш IP-адрес и порт.<br>
+                Ваш адрес: <code id="hostAddr">...</code>
+            </div>
+            <button class="btn-primary" onclick="startAsHost()" style="width:100%">Запустить как хост</button>
+        </div>
+
+        <div id="joinMode" class="hidden">
+            <div class="input-row">
+                <input type="text" id="peerHost" placeholder="IP-адрес хоста (напр. 192.168.1.10)" />
+                <input type="number" id="peerPort" class="port" value="8000" placeholder="Порт" />
+            </div>
+            <button class="btn-primary" onclick="connectToPeer()" style="width:100%">Подключиться к хосту</button>
+        </div>
     </div>
 
     <!-- Main Screen -->
     <div id="mainScreen" class="hidden">
-        <!-- Status Panel -->
+        <!-- Connection Status -->
         <div class="card">
-            <h2>Статус подключения</h2>
+            <h2>Статус</h2>
+            <div class="status-row">
+                <span class="status-label">Пир:</span>
+                <span id="peerStatus" class="status-value waiting">ожидание подключения...</span>
+            </div>
             <div class="status-row">
                 <span class="status-label">Ваша папка:</span>
                 <span id="myPathStatus" class="status-value waiting">не выбрана</span>
             </div>
             <div class="status-row">
-                <span class="status-label">Другая сторона:</span>
+                <span class="status-label">Папка пира:</span>
                 <span id="peerPathStatus" class="status-value waiting">ожидание...</span>
             </div>
             <div class="actions">
@@ -130,6 +165,11 @@ button:disabled { opacity: 0.4; cursor: not-allowed; }
                 <div class="stat-item"><div class="stat-value" id="statErrors">0</div><div class="stat-label">Ошибок</div></div>
             </div>
         </div>
+
+        <!-- Disconnect -->
+        <div style="text-align:center;margin-top:8px;">
+            <button class="btn-warn" onclick="disconnectPeer()" style="font-size:12px;padding:6px 16px;">Отключиться от пира</button>
+        </div>
     </div>
 </div>
 
@@ -141,133 +181,147 @@ button:disabled { opacity: 0.4; cursor: not-allowed; }
         <div id="folderTree" class="folder-tree"></div>
         <div class="modal-actions">
             <button class="btn-secondary" onclick="closeBrowseModal()">Отмена</button>
-            <button class="btn-primary" id="selectFolderBtn" onclick="selectFolder()">Выбрать эту папку</button>
+            <button class="btn-primary" onclick="selectFolder()">Выбрать эту папку</button>
         </div>
     </div>
 </div>
 
 <script>
 let ws = null;
-let currentPath = '/mnt';
-let selectedPath = '/mnt';
+let currentPath = '/';
 let isSyncing = false;
 let isInitiator = false;
 
-function joinRoom() {
-    const roomId = document.getElementById('roomInput').value.trim();
-    if (!roomId) return;
+// Detect host address
+document.getElementById('hostAddr').textContent = location.hostname + ':' + (location.port || '8000');
 
+function setMode(mode) {
+    document.querySelectorAll('.mode-tab').forEach((t, i) => {
+        t.classList.toggle('active', (mode === 'host' && i === 0) || (mode === 'join' && i === 1));
+    });
+    document.getElementById('hostMode').classList.toggle('hidden', mode !== 'host');
+    document.getElementById('joinMode').classList.toggle('hidden', mode !== 'join');
+}
+
+function connectWS() {
     const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-    ws = new WebSocket(`${proto}//${location.host}/ws?room=${encodeURIComponent(roomId)}`);
+    ws = new WebSocket(proto + '//' + location.host + '/ws');
 
     ws.onopen = () => {
-        document.getElementById('loginScreen').classList.add('hidden');
+        document.getElementById('connectScreen').classList.add('hidden');
         document.getElementById('mainScreen').classList.remove('hidden');
     };
 
-    ws.onmessage = (event) => {
-        const msg = JSON.parse(event.data);
-        handleMessage(msg);
-    };
+    ws.onmessage = (event) => handleMessage(JSON.parse(event.data));
 
     ws.onclose = () => {
-        document.getElementById('loginScreen').classList.remove('hidden');
+        document.getElementById('connectScreen').classList.remove('hidden');
         document.getElementById('mainScreen').classList.add('hidden');
         isSyncing = false;
         isInitiator = false;
     };
 
     ws.onerror = () => {
-        alert('Ошибка подключения к серверу');
+        alert('Ошибка подключения к локальному серверу');
+    };
+}
+
+function startAsHost() {
+    connectWS();
+}
+
+function connectToPeer() {
+    const host = document.getElementById('peerHost').value.trim();
+    const port = parseInt(document.getElementById('peerPort').value) || 8000;
+    if (!host) return;
+
+    connectWS();
+    // After WS opens, tell our server to connect to the peer
+    const origOnOpen = ws.onopen;
+    ws.onopen = (e) => {
+        origOnOpen(e);
+        setTimeout(() => {
+            ws.send(JSON.stringify({ type: 'connect_peer', host: host, port: port }));
+        }, 200);
     };
 }
 
 function handleMessage(msg) {
     switch (msg.type) {
-        case 'status':
-            updateStatus(msg);
-            break;
-        case 'sync_started':
-            onSyncStarted(msg);
-            break;
+        case 'status': updateStatus(msg); break;
+        case 'sync_started': onSyncStarted(msg); break;
         case 'sync_rejected':
-            addLog('warn', 'Синхронизация уже запущена другой стороной');
+            addLog('warn', 'Синхронизация отклонена: ' + (msg.reason || ''));
+            isSyncing = false;
             break;
-        case 'progress':
-            updateProgress(msg);
-            break;
-        case 'log':
-            addLog(msg.level, msg.message);
-            break;
-        case 'done':
-            onSyncDone(msg.stats);
-            break;
+        case 'progress': updateProgress(msg); break;
+        case 'log': addLog(msg.level, msg.message); break;
+        case 'done': onSyncDone(msg.stats); break;
+        case 'error': addLog('error', msg.message); break;
     }
 }
 
 function updateStatus(msg) {
+    const peerStatus = document.getElementById('peerStatus');
     const myStatus = document.getElementById('myPathStatus');
-    const peerStatus = document.getElementById('peerPathStatus');
+    const peerPathStatus = document.getElementById('peerPathStatus');
     const syncBtn = document.getElementById('syncBtn');
 
+    // Peer connection status
+    if (msg.peer_connected) {
+        peerStatus.textContent = 'подключён';
+        peerStatus.className = 'status-value ready';
+    } else {
+        peerStatus.textContent = 'ожидание подключения...';
+        peerStatus.className = 'status-value waiting';
+    }
+
+    // My path
     if (msg.my_path) {
         myStatus.textContent = msg.my_path + ' \u2705';
         myStatus.className = 'status-value ready';
     } else {
-        myStatus.textContent = '\u043D\u0435 \u0432\u044B\u0431\u0440\u0430\u043D\u0430';
+        myStatus.textContent = 'не выбрана';
         myStatus.className = 'status-value waiting';
     }
 
+    // Peer path
     if (msg.peer_path) {
-        peerStatus.textContent = msg.peer_path + ' \u2705';
-        peerStatus.className = 'status-value ready';
-    } else if (msg.peer_ready === false && msg.peer_path === null) {
-        peerStatus.textContent = '\u043E\u0436\u0438\u0434\u0430\u043D\u0438\u0435... \u23F3';
-        peerStatus.className = 'status-value waiting';
+        peerPathStatus.textContent = msg.peer_path + ' \u2705';
+        peerPathStatus.className = 'status-value ready';
+    } else {
+        peerPathStatus.textContent = msg.peer_connected ? 'ожидание выбора...' : 'нет подключения';
+        peerPathStatus.className = 'status-value waiting';
     }
 
-    syncBtn.disabled = !(msg.my_ready && msg.peer_ready) || isSyncing;
-
-    // If sync was active and we got status update, sync ended
-    if (isSyncing && !msg.peer_path) {
-        isSyncing = false;
-        isInitiator = false;
-        document.getElementById('syncInfoCard').classList.add('hidden');
-        document.getElementById('cancelBtn').classList.add('hidden');
-        syncBtn.disabled = true;
-    }
+    // Sync button — active only when both have paths and peer connected
+    syncBtn.disabled = !(msg.my_ready && msg.peer_ready && msg.peer_connected) || isSyncing;
 }
 
 function onSyncStarted(msg) {
     isSyncing = true;
     isInitiator = msg.initiator === 'you';
 
-    const syncInfoCard = document.getElementById('syncInfoCard');
-    const syncInfo = document.getElementById('syncInfo');
-    const cancelBtn = document.getElementById('cancelBtn');
-    const syncBtn = document.getElementById('syncBtn');
-    const progressCard = document.getElementById('progressCard');
-    const statsCard = document.getElementById('statsCard');
-
-    syncInfoCard.classList.remove('hidden');
-    progressCard.classList.remove('hidden');
-    statsCard.classList.add('hidden');
-    syncBtn.disabled = true;
-
-    // Clear log
+    document.getElementById('syncInfoCard').classList.remove('hidden');
+    document.getElementById('progressCard').classList.remove('hidden');
+    document.getElementById('statsCard').classList.add('hidden');
+    document.getElementById('syncBtn').disabled = true;
     document.getElementById('log').innerHTML = '';
 
+    const syncInfo = document.getElementById('syncInfo');
+    const cancelBtn = document.getElementById('cancelBtn');
+
     if (isInitiator) {
-        syncInfo.textContent = '\u0412\u044B \u2014 \u0438\u0441\u0442\u043E\u0447\u043D\u0438\u043A \u0441\u0438\u043D\u0445\u0440\u043E\u043D\u0438\u0437\u0430\u0446\u0438\u0438';
+        syncInfo.textContent = 'Вы — источник синхронизации';
         cancelBtn.classList.remove('hidden');
     } else {
-        syncInfo.textContent = '\u0414\u0440\u0443\u0433\u0430\u044F \u0441\u0442\u043E\u0440\u043E\u043D\u0430 \u0437\u0430\u043F\u0443\u0441\u0442\u0438\u043B\u0430 \u0441\u0438\u043D\u0445\u0440\u043E\u043D\u0438\u0437\u0430\u0446\u0438\u044E. \u0412\u0430\u0448\u0430 \u043F\u0430\u043F\u043A\u0430 \u043E\u0431\u043D\u043E\u0432\u043B\u044F\u0435\u0442\u0441\u044F...';
+        syncInfo.textContent = 'Другая сторона запустила синхронизацию. Ваша папка обновляется...';
         cancelBtn.classList.add('hidden');
     }
 }
 
 function updateProgress(msg) {
-    const pct = Math.round((msg.current / msg.total) * 100);
+    const pct = msg.total > 0 ? Math.round((msg.current / msg.total) * 100) : 0;
     const bar = document.getElementById('progressBar');
     bar.style.width = pct + '%';
     bar.textContent = msg.current + ' / ' + msg.total;
@@ -290,17 +344,14 @@ function onSyncDone(stats) {
     document.getElementById('syncInfoCard').classList.add('hidden');
     document.getElementById('cancelBtn').classList.add('hidden');
 
-    // Show stats
-    const statsCard = document.getElementById('statsCard');
-    statsCard.classList.remove('hidden');
-    document.getElementById('statCopied').textContent = stats.copied;
-    document.getElementById('statOverwritten').textContent = stats.overwritten;
-    document.getElementById('statSkipped').textContent = stats.skipped;
-    document.getElementById('statDeleted').textContent = stats.deleted;
-    document.getElementById('statIgnored').textContent = stats.ignored;
-    document.getElementById('statErrors').textContent = stats.errors;
+    document.getElementById('statsCard').classList.remove('hidden');
+    document.getElementById('statCopied').textContent = stats.copied || 0;
+    document.getElementById('statOverwritten').textContent = stats.overwritten || 0;
+    document.getElementById('statSkipped').textContent = stats.skipped || 0;
+    document.getElementById('statDeleted').textContent = stats.deleted || 0;
+    document.getElementById('statIgnored').textContent = stats.ignored || 0;
+    document.getElementById('statErrors').textContent = stats.errors || 0;
 
-    // Progress to 100%
     const bar = document.getElementById('progressBar');
     bar.style.width = '100%';
     bar.textContent = '100%';
@@ -308,20 +359,29 @@ function onSyncDone(stats) {
 
 function startSync() {
     if (!ws || isSyncing) return;
-    const deleteExtra = document.getElementById('deleteExtra').checked;
-    ws.send(JSON.stringify({ type: 'start_sync', delete_extra: deleteExtra }));
+    ws.send(JSON.stringify({
+        type: 'start_sync',
+        delete_extra: document.getElementById('deleteExtra').checked
+    }));
 }
 
 function cancelSync() {
     if (!ws || !isSyncing || !isInitiator) return;
     ws.send(JSON.stringify({ type: 'cancel' }));
+    isSyncing = false;
+    isInitiator = false;
+    document.getElementById('syncInfoCard').classList.add('hidden');
+}
+
+function disconnectPeer() {
+    if (ws) ws.send(JSON.stringify({ type: 'disconnect_peer' }));
 }
 
 // Browse modal
 async function openBrowseModal() {
-    currentPath = '/mnt';
+    currentPath = '/';
     document.getElementById('browseModal').classList.remove('hidden');
-    await loadFolder('/mnt');
+    await loadFolder('/');
 }
 
 function closeBrowseModal() {
@@ -338,13 +398,15 @@ async function loadFolder(path) {
         const tree = document.getElementById('folderTree');
         tree.innerHTML = '';
 
-        // Back button (if not at root)
-        if (path !== '/mnt') {
+        // Back button
+        if (path !== '/') {
             const backItem = document.createElement('div');
             backItem.className = 'folder-item folder-back';
             backItem.innerHTML = '<span class="folder-icon">\u2B06</span> ..';
             backItem.onclick = () => {
-                const parent = path.substring(0, path.lastIndexOf('/')) || '/mnt';
+                const parts = path.replace(/\/+$/, '').split('/');
+                parts.pop();
+                const parent = parts.join('/') || '/';
                 loadFolder(parent);
             };
             tree.appendChild(backItem);
@@ -354,11 +416,14 @@ async function loadFolder(path) {
             const item = document.createElement('div');
             item.className = 'folder-item';
             item.innerHTML = '<span class="folder-icon">\uD83D\uDCC1</span> ' + dir;
-            item.onclick = () => loadFolder(data.path + '/' + dir);
+            item.onclick = () => {
+                const newPath = data.path.replace(/\/+$/, '') + '/' + dir;
+                loadFolder(newPath);
+            };
             tree.appendChild(item);
         });
 
-        if (data.dirs.length === 0 && path !== '/mnt') {
+        if (data.dirs.length === 0) {
             const empty = document.createElement('div');
             empty.style.cssText = 'padding:12px;color:#555;text-align:center;';
             empty.textContent = 'Нет подпапок';
@@ -370,16 +435,15 @@ async function loadFolder(path) {
 }
 
 function selectFolder() {
-    selectedPath = currentPath;
     closeBrowseModal();
     if (ws) {
-        ws.send(JSON.stringify({ type: 'ready', path: selectedPath }));
+        ws.send(JSON.stringify({ type: 'ready', path: currentPath }));
     }
 }
 
-// Enter key to join room
-document.getElementById('roomInput').addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') joinRoom();
+// Enter key in peer host input
+document.getElementById('peerHost').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') connectToPeer();
 });
 </script>
 </body>

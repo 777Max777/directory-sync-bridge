@@ -10,10 +10,10 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.json.*
 import java.io.File
-import java.util.UUID
 
 fun Application.configureRoutes() {
     routing {
+        // Serve the UI
         get("/") {
             val indexFile = this::class.java.classLoader.getResource("static/index.html")
             if (indexFile != null) {
@@ -23,12 +23,12 @@ fun Application.configureRoutes() {
             }
         }
 
+        // Browse local filesystem
         get("/browse") {
-            val path = call.request.queryParameters["path"] ?: mountRoot
+            val path = call.request.queryParameters["path"] ?: browseRoot
 
-            // Path traversal protection
             val normalizedPath = File(path).canonicalPath
-            val normalizedRoot = File(mountRoot).canonicalPath
+            val normalizedRoot = File(browseRoot).canonicalPath
             if (!normalizedPath.startsWith(normalizedRoot)) {
                 call.respond(HttpStatusCode.Forbidden, "Access denied")
                 return@get
@@ -40,34 +40,31 @@ fun Application.configureRoutes() {
                 return@get
             }
 
-            val dirs = dir.listFiles()
-                ?.filter { it.isDirectory }
-                ?.map { it.name }
-                ?.sorted()
-                ?: emptyList()
+            val dirs = try {
+                dir.listFiles()
+                    ?.filter { it.isDirectory && !it.isHidden }
+                    ?.map { it.name }
+                    ?.sorted()
+                    ?: emptyList()
+            } catch (e: SecurityException) {
+                emptyList()
+            }
 
             val response = buildJsonObject {
-                put("dirs", buildJsonArray {
-                    dirs.forEach { add(it) }
-                })
+                put("dirs", buildJsonArray { dirs.forEach { add(it) } })
                 put("path", normalizedPath.replace("\\", "/"))
             }
             call.respondText(response.toString(), ContentType.Application.Json)
         }
 
+        // Browser WebSocket — local UI connects here
         webSocket("/ws") {
-            val roomId = call.request.queryParameters["room"]
-            if (roomId.isNullOrBlank()) {
-                close(CloseReason(CloseReason.Codes.VIOLATED_POLICY, "room parameter required"))
+            if (PeerManager.browserSession != null) {
+                close(CloseReason(CloseReason.Codes.VIOLATED_POLICY, "browser already connected"))
                 return@webSocket
             }
-
-            val clientId = UUID.randomUUID().toString()
-            val room = RoomManager.joinRoom(roomId, clientId, this)
-            if (room == null) {
-                close(CloseReason(CloseReason.Codes.VIOLATED_POLICY, "room is full"))
-                return@webSocket
-            }
+            PeerManager.browserSession = this
+            PeerManager.broadcastStatus()
 
             try {
                 for (frame in incoming) {
@@ -77,88 +74,86 @@ fun Application.configureRoutes() {
                         val type = json["type"]?.jsonPrimitive?.content ?: continue
 
                         when (type) {
+                            // User selected a local folder
                             "ready" -> {
                                 val path = json["path"]?.jsonPrimitive?.content ?: continue
-                                // Validate path is within mount root
                                 val normalizedPath = File(path).canonicalPath
-                                val normalizedRoot = File(mountRoot).canonicalPath
+                                val normalizedRoot = File(browseRoot).canonicalPath
                                 if (!normalizedPath.startsWith(normalizedRoot)) continue
 
-                                room.mutex.withLock {
-                                    room.getClient(clientId)?.path = path
-                                }
-                                room.broadcastStatus()
+                                PeerManager.localPath = path
+                                // Notify peer about our path
+                                PeerManager.sendToPeer(buildJsonObject {
+                                    put("type", "peer_path")
+                                    put("path", path)
+                                })
+                                PeerManager.broadcastStatus()
                             }
 
+                            // Connect to a remote peer instance
+                            "connect_peer" -> {
+                                val host = json["host"]?.jsonPrimitive?.content ?: continue
+                                val port = json["port"]?.jsonPrimitive?.int ?: 8000
+                                PeerManager.connectToPeer(host, port, this@configureRoutes)
+                            }
+
+                            // Start sync (this user is the initiator)
                             "start_sync" -> {
                                 val deleteExtra = json["delete_extra"]?.jsonPrimitive?.boolean ?: false
-
-                                room.mutex.withLock {
-                                    if (room.syncInitiator != null) {
-                                        // Already running
-                                        val msg = buildJsonObject {
-                                            put("type", "sync_rejected")
-                                            put("reason", "already_started")
-                                        }
-                                        room.sendTo(clientId, msg.toString())
-                                        return@withLock
-                                    }
-
-                                    val me = room.getClient(clientId)
-                                    val peer = room.getPeer(clientId)
-                                    if (me?.ready != true || peer?.ready != true) return@withLock
-
-                                    room.syncInitiator = clientId
-
-                                    // Notify both
-                                    val initiatorMsg = buildJsonObject {
-                                        put("type", "sync_started")
-                                        put("initiator", "you")
-                                    }
-                                    val peerMsg = buildJsonObject {
-                                        put("type", "sync_started")
-                                        put("initiator", "peer")
-                                    }
-                                    room.sendTo(clientId, initiatorMsg.toString())
-                                    room.sendTo(peer.clientId, peerMsg.toString())
-
-                                    // Start sync in background
-                                    val syncService = SyncService(
-                                        room = room,
-                                        sourcePath = me.path!!,
-                                        destPath = peer.path!!,
-                                        deleteExtra = deleteExtra
-                                    )
-
-                                    room.syncJob = launch {
-                                        try {
-                                            syncService.execute()
-                                        } finally {
-                                            room.mutex.withLock {
-                                                room.syncJob = null
-                                                room.syncInitiator = null
-                                            }
-                                            room.broadcastStatus()
-                                        }
-                                    }
-                                }
+                                PeerManager.startSync(deleteExtra, this@configureRoutes)
                             }
 
+                            // Cancel sync
                             "cancel" -> {
-                                room.mutex.withLock {
-                                    if (room.syncInitiator == clientId) {
-                                        room.syncJob?.cancel()
-                                        room.syncJob = null
-                                        room.syncInitiator = null
-                                    }
-                                }
-                                room.broadcastStatus()
+                                PeerManager.cancelSync()
+                            }
+
+                            // Disconnect from peer
+                            "disconnect_peer" -> {
+                                PeerManager.disconnectPeer()
                             }
                         }
                     }
                 }
             } finally {
-                RoomManager.leaveRoom(roomId, clientId)
+                PeerManager.browserSession = null
+            }
+        }
+
+        // Peer WebSocket — the other instance connects here
+        webSocket("/peer") {
+            if (PeerManager.peerSession != null) {
+                close(CloseReason(CloseReason.Codes.VIOLATED_POLICY, "peer already connected"))
+                return@webSocket
+            }
+            PeerManager.peerSession = this
+            // Send our path to the newly connected peer
+            if (PeerManager.localPath != null) {
+                PeerManager.sendToPeer(buildJsonObject {
+                    put("type", "peer_path")
+                    put("path", PeerManager.localPath!!)
+                })
+            }
+            PeerManager.broadcastStatus()
+
+            try {
+                for (frame in incoming) {
+                    if (frame is Frame.Text) {
+                        PeerManager.handlePeerMessage(frame.readText(), this@configureRoutes)
+                    }
+                }
+            } finally {
+                PeerManager.peerSession = null
+                PeerManager.remotePath = null
+                PeerManager.mutex.withLock {
+                    if (PeerManager.isSyncing) {
+                        PeerManager.syncJob?.cancel()
+                        PeerManager.isSyncing = false
+                        PeerManager.syncInitiator = null
+                        PeerManager.syncJob = null
+                    }
+                }
+                PeerManager.broadcastStatus()
             }
         }
     }

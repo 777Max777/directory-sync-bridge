@@ -6,7 +6,7 @@ plugins {
 }
 
 group = "com.sync"
-version = "1.0.0"
+version = "2.0.0"
 
 application {
     mainClass.set("com.sync.ApplicationKt")
@@ -16,12 +16,21 @@ repositories {
     mavenCentral()
 }
 
+val ktorVersion = "2.3.8"
+
 dependencies {
-    implementation("io.ktor:ktor-server-core")
-    implementation("io.ktor:ktor-server-netty")
-    implementation("io.ktor:ktor-server-websockets")
-    implementation("io.ktor:ktor-server-content-negotiation")
-    implementation("io.ktor:ktor-serialization-kotlinx-json")
+    // Server
+    implementation("io.ktor:ktor-server-core:$ktorVersion")
+    implementation("io.ktor:ktor-server-netty:$ktorVersion")
+    implementation("io.ktor:ktor-server-websockets:$ktorVersion")
+    implementation("io.ktor:ktor-server-content-negotiation:$ktorVersion")
+    implementation("io.ktor:ktor-serialization-kotlinx-json:$ktorVersion")
+
+    // Client (for connecting to peer as WS client)
+    implementation("io.ktor:ktor-client-core:$ktorVersion")
+    implementation("io.ktor:ktor-client-cio:$ktorVersion")
+    implementation("io.ktor:ktor-client-websockets:$ktorVersion")
+
     implementation("ch.qos.logback:logback-classic:1.4.14")
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.2")
 }
