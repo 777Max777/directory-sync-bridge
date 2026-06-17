@@ -452,7 +452,7 @@ object PeerManager {
 
     private suspend fun handleIncomingFile(json: JsonObject) {
         val path = json["path"]?.jsonPrimitive?.content ?: return
-        val data = json["data"]?.jsonPrimitive?.content ?: return
+        val data = json["data"]?.jsonPrimitive?.content ?: ""
         val lastModified = json["lastModified"]?.jsonPrimitive?.long ?: System.currentTimeMillis()
         val chunkIndex = json["chunk_index"]?.jsonPrimitive?.int ?: 0
         val totalChunks = json["total_chunks"]?.jsonPrimitive?.int ?: 1
@@ -462,10 +462,10 @@ object PeerManager {
         val targetFile = File(destDir, path)
         targetFile.parentFile?.mkdirs()
 
-        val bytes = Base64.getDecoder().decode(data)
+        val bytes = if (data.isEmpty()) ByteArray(0) else Base64.getDecoder().decode(data)
 
         if (chunkIndex == 0) {
-            // First chunk — create/overwrite file
+            // First chunk (or empty file) — create/overwrite file
             targetFile.writeBytes(bytes)
         } else {
             // Append subsequent chunks
@@ -484,6 +484,21 @@ object PeerManager {
         if (!file.exists()) return
 
         val bytes = file.readBytes()
+
+        if (bytes.isEmpty()) {
+            // Empty file — send a single empty chunk
+            sendToPeer(buildJsonObject {
+                put("type", "peer_file_data")
+                put("path", relativePath)
+                put("data", "")
+                put("chunk_index", 0)
+                put("total_chunks", 1)
+                put("is_last", true)
+                put("lastModified", file.lastModified())
+            })
+            return
+        }
+
         val totalChunks = (bytes.size + CHUNK_SIZE - 1) / CHUNK_SIZE
 
         for (i in 0 until totalChunks) {
