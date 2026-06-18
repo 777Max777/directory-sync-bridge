@@ -5,8 +5,29 @@ import java.nio.file.FileSystems
 import java.nio.file.PathMatcher
 import java.nio.file.Paths
 
+/**
+ * Reads `.syncignore` from the source root and decides whether a file
+ * (given by its source-relative path, using "/" separators) is excluded.
+ *
+ * Supports .gitignore-style rules:
+ *   - `*.log`            — bare glob, matches that name in any directory
+ *   - `build/`           — directory rule, ignores the folder and everything inside it
+ *   - `build/sub`        — anchored glob (contains a slash), relative to the source root
+ *   - `**`+`/__pycache__/` — directory rule matched at any depth
+ *   - `secret.txt`       — a concrete file name anywhere
+ *   - leading `#`        — comment, ignored
+ */
 class IgnoreService(sourceRoot: File) {
-    private val matchers: List<PathMatcher>
+
+    private data class Rule(
+        val matcher: PathMatcher,
+        /** Pattern ended with "/" — only matches directories (and their contents). */
+        val dirOnly: Boolean,
+        /** Pattern contains a "/" (besides a trailing one) — matched against the full relative path. */
+        val anchored: Boolean,
+    )
+
+    private val rules: List<Rule>
     val rulesCount: Int
 
     init {
@@ -19,22 +40,45 @@ class IgnoreService(sourceRoot: File) {
             emptyList()
         }
         rulesCount = patterns.size
-        matchers = patterns.map { pattern ->
-            FileSystems.getDefault().getPathMatcher("glob:$pattern")
+        rules = patterns.map { raw ->
+            val dirOnly = raw.endsWith("/")
+            // Strip a leading "/" (root anchor) and any trailing "/" for matching.
+            val normalized = raw.trim('/')
+            val anchored = normalized.contains('/')
+            Rule(
+                matcher = FileSystems.getDefault().getPathMatcher("glob:$normalized"),
+                dirOnly = dirOnly,
+                anchored = anchored,
+            )
         }
     }
 
+    /** @param relativePath path of the file relative to the source root, using "/" separators. */
     fun isIgnored(relativePath: String): Boolean {
-        if (matchers.isEmpty()) return false
+        if (rules.isEmpty()) return false
         val path = Paths.get(relativePath)
-        return matchers.any { matcher ->
-            matcher.matches(path) ||
-            // Also check against just the file name for patterns like *.log
-            matcher.matches(path.fileName) ||
-            // Check each path component for directory patterns
-            (0 until path.nameCount).any { i ->
-                matcher.matches(path.subpath(0, i + 1))
+        val n = path.nameCount
+        return rules.any { rule -> rule.matchesFile(path, n) }
+    }
+
+    private fun Rule.matchesFile(path: java.nio.file.Path, n: Int): Boolean {
+        if (anchored) {
+            // Match the full path; also match any ancestor directory prefix so that
+            // everything *inside* a matched directory is ignored too.
+            // For a dir-only rule we never match the file path itself, only its ancestors.
+            val last = if (dirOnly) n - 1 else n
+            for (i in 1..last) {
+                if (matcher.matches(path.subpath(0, i))) return true
             }
+            return false
         }
+
+        // Bare-name rule: match against individual path components.
+        // For a dir-only rule, only ancestor components count (the last component is the file).
+        val last = if (dirOnly) n - 1 else n
+        for (i in 0 until last) {
+            if (matcher.matches(path.getName(i))) return true
+        }
+        return false
     }
 }
